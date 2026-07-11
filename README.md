@@ -49,4 +49,5 @@ To make it accessible online for mobile/remote devices:
 5. Your game will be live at `https://<your-username>.github.io/shivtegs-snake/`! Copy that link, and start hosting multiplayer lobbies!
 
 ---
-*Created for Shivteg &bull; Retro Arcade Series*
+*Created by Shivteg*
+
