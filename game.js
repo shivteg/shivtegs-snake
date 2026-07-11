@@ -880,18 +880,14 @@ btnJoinGame.addEventListener('click', () => {
         return;
     }
 
-    // Robust URL parsing to extract the 'room' parameter
+    // Bulletproof room query parameter extraction
     let roomId = inputVal;
-    try {
-        if (inputVal.startsWith('http://') || inputVal.startsWith('https://') || inputVal.startsWith('file://')) {
-            const url = new URL(inputVal);
-            roomId = url.searchParams.get('room') || roomId;
-        } else if (inputVal.includes('?room=')) {
-            const params = new URLSearchParams(inputVal.substring(inputVal.indexOf('?')));
-            roomId = params.get('room') || roomId;
-        }
-    } catch (e) {
-        console.error("Failed to parse URL, using raw input value", e);
+    const roomParamIndex = inputVal.toLowerCase().indexOf('room=');
+    if (roomParamIndex !== -1) {
+        // Extract everything after 'room='
+        const queryPart = inputVal.substring(roomParamIndex + 5);
+        // Split on standard URL delimiters to get the clean ID
+        roomId = queryPart.split('&')[0].split('#')[0].split(' ')[0].trim();
     }
 
     joinStatusContainer.classList.remove('hidden');
@@ -906,8 +902,8 @@ function initPeer(role, targetRoomId) {
     disconnectMultiplayer();
     onlineRole = role;
 
-    // Use default public PeerJS server configured with PEER_CONFIG
-    peer = new Peer(null, PEER_CONFIG);
+    // Use default public PeerJS server configured with PEER_CONFIG (passing undefined triggers random ID generation)
+    peer = new Peer(undefined, PEER_CONFIG);
 
     peer.on('open', (id) => {
         if (role === 'host') {
@@ -1166,7 +1162,7 @@ function checkNextSlot() {
     quickMatchStatusText.textContent = `Scanning public lobby slot ${searchIndex + 1}...`;
     
     // We create a temporary peer to probe the slot
-    let probePeer = new Peer(null, {
+    let probePeer = new Peer(undefined, {
         ...PEER_CONFIG,
         debug: 0
     });
@@ -1224,7 +1220,7 @@ function joinPublicMatch(slotId) {
     disconnectMultiplayer();
     onlineRole = 'client';
     
-    peer = new Peer(null, PEER_CONFIG);
+    peer = new Peer(undefined, PEER_CONFIG);
     
     peer.on('open', () => {
         connectToHost(slotId);
@@ -1284,7 +1280,18 @@ function hostPublicMatch() {
 // --- Check URL parameters for Direct Room Invites ---
 window.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
-    const roomParam = urlParams.get('room');
+    let roomParam = urlParams.get('room');
+    
+    // Case-insensitive key search fallback
+    if (!roomParam) {
+        for (let key of urlParams.keys()) {
+            if (key.toLowerCase() === 'room') {
+                roomParam = urlParams.get(key);
+                break;
+            }
+        }
+    }
+    
     if (roomParam) {
         showScreen('lobby');
         joinRoomInput.value = roomParam;
