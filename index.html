@@ -68,6 +68,20 @@
                     <p class="subtitle">Connect and challenge friends on other devices</p>
 
                     <div class="lobby-grid">
+                        <!-- Quick Match -->
+                        <div class="lobby-option quick-match-option">
+                            <h3><i class="fa-solid fa-bolt"></i> Quick Match</h3>
+                            <p>Automatically search for an open lobby or host one for others to join.</p>
+                            <button id="btn-quick-match" class="btn btn-secondary">Find Match</button>
+                            
+                            <div id="quick-match-status-container" class="connection-status hidden">
+                                <span class="status-indicator waiting"></span>
+                                <span id="quick-match-status-text">Searching for active lobbies...</span>
+                            </div>
+                        </div>
+
+                        <div class="divider"><span>OR SHARE A PRIVATE LINK</span></div>
+
                         <!-- Host Room -->
                         <div class="lobby-option host-option">
                             <h3><i class="fa-solid fa-house-laptop"></i> Host a Game</h3>

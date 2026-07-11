@@ -104,6 +104,12 @@ const btnHelp = document.getElementById('help-btn');
 const modalHelp = document.getElementById('help-modal');
 const closeModal = document.querySelector('.close-modal');
 
+// Quick Match Buttons & Status
+const btnQuickMatch = document.getElementById('btn-quick-match');
+const quickMatchStatusContainer = document.getElementById('quick-match-status-container');
+const quickMatchStatusText = document.getElementById('quick-match-status-text');
+const quickMatchStatusIndicator = document.querySelector('.quick-match-option .status-indicator');
+
 // Overlay Elements
 const canvasOverlay = document.getElementById('canvas-overlay');
 const overlayTitle = document.getElementById('overlay-title');
@@ -1090,6 +1096,174 @@ function disconnectMultiplayer() {
     btnHostCreate.classList.remove('hidden');
     joinStatusContainer.classList.add('hidden');
     joinRoomInput.value = "";
+    
+    resetQuickMatchUI();
+}
+
+// --- Matchmaking / Quick Match Engine ---
+let searchIndex = 0;
+const MAX_SEARCH_SLOTS = 5;
+const ICE_SERVERS_LIST = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.services.mozilla.com' }
+];
+
+btnQuickMatch.addEventListener('click', () => {
+    playSound('click');
+    startQuickMatchSearch();
+});
+
+function resetQuickMatchUI() {
+    quickMatchStatusContainer.classList.add('hidden');
+    btnQuickMatch.classList.remove('hidden');
+    quickMatchStatusText.textContent = "Searching for active lobbies...";
+}
+
+function startQuickMatchSearch() {
+    searchIndex = 0;
+    quickMatchStatusContainer.classList.remove('hidden');
+    quickMatchStatusText.textContent = "Connecting to matchmaking...";
+    quickMatchStatusIndicator.className = "status-indicator waiting";
+    btnQuickMatch.classList.add('hidden');
+    
+    checkNextSlot();
+}
+
+function checkNextSlot() {
+    if (searchIndex >= MAX_SEARCH_SLOTS) {
+        // Checked all slots, none had a waiting host.
+        // Let's host our own on the first slot that we can!
+        hostPublicMatch();
+        return;
+    }
+    
+    const slotId = `shivtegs-snake-lobby-slot-${searchIndex}`;
+    quickMatchStatusText.textContent = `Scanning public lobby slot ${searchIndex + 1}...`;
+    
+    // We create a temporary peer to probe the slot
+    let probePeer = new Peer(null, {
+        debug: 0,
+        config: { iceServers: ICE_SERVERS_LIST }
+    });
+    
+    let isResolved = false;
+    
+    probePeer.on('open', () => {
+        // Try to connect to the slot host
+        let conn = probePeer.connect(slotId, { reliable: true });
+        
+        let timeout = setTimeout(() => {
+            if (!isResolved) {
+                isResolved = true;
+                probePeer.destroy();
+                searchIndex++;
+                checkNextSlot();
+            }
+        }, 1200); // 1.2 seconds timeout
+        
+        conn.on('open', () => {
+            if (!isResolved) {
+                isResolved = true;
+                clearTimeout(timeout);
+                // SUCCESS! Host is waiting! Let's disconnect probe and do the real join!
+                probePeer.destroy();
+                quickMatchStatusText.textContent = `Slot ${searchIndex + 1} active! Joining...`;
+                setTimeout(() => {
+                    joinPublicMatch(slotId);
+                }, 200);
+            }
+        });
+        
+        conn.on('error', (err) => {
+            if (!isResolved) {
+                isResolved = true;
+                clearTimeout(timeout);
+                probePeer.destroy();
+                searchIndex++;
+                checkNextSlot();
+            }
+        });
+    });
+    
+    probePeer.on('error', () => {
+        if (!isResolved) {
+            isResolved = true;
+            probePeer.destroy();
+            searchIndex++;
+            checkNextSlot();
+        }
+    });
+}
+
+function joinPublicMatch(slotId) {
+    disconnectMultiplayer();
+    onlineRole = 'client';
+    
+    peer = new Peer(null, {
+        debug: 1,
+        config: { iceServers: ICE_SERVERS_LIST }
+    });
+    
+    peer.on('open', () => {
+        connectToHost(slotId);
+    });
+    
+    peer.on('error', (err) => {
+        console.error("Matchmaking Join Error:", err);
+        resetQuickMatchUI();
+        alert("Failed to join matched game.");
+    });
+}
+
+function hostPublicMatch() {
+    disconnectMultiplayer();
+    onlineRole = 'host';
+    
+    let hostSlotIndex = 0;
+    
+    function tryHostSlot() {
+        if (hostSlotIndex >= MAX_SEARCH_SLOTS) {
+            resetQuickMatchUI();
+            alert("All matchmaking slots are full. Please try again later!");
+            return;
+        }
+        
+        const slotId = `shivtegs-snake-lobby-slot-${hostSlotIndex}`;
+        quickMatchStatusText.textContent = `Creating public match on Slot ${hostSlotIndex + 1}...`;
+        
+        peer = new Peer(slotId, {
+            debug: 1,
+            config: { iceServers: ICE_SERVERS_LIST }
+        });
+        
+        peer.on('open', () => {
+            quickMatchStatusText.textContent = `Lobby active on Slot ${hostSlotIndex + 1}! Waiting for players...`;
+            quickMatchStatusIndicator.className = "status-indicator waiting";
+            
+            peer.on('connection', (conn) => {
+                connection = conn;
+                setupHostConnection();
+            });
+        });
+        
+        peer.on('error', (err) => {
+            if (err.type === 'unavailable-id') {
+                // Slot is taken, try next slot
+                hostSlotIndex++;
+                tryHostSlot();
+            } else {
+                console.error("Matchmaking Host Error:", err);
+                resetQuickMatchUI();
+                alert("Failed to create matchmaking room: " + err.type);
+            }
+        });
+    }
+    
+    tryHostSlot();
 }
 
 // --- Check URL parameters for Direct Room Invites ---
