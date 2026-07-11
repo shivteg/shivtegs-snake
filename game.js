@@ -809,8 +809,9 @@ btnOverlayAction.addEventListener('click', () => {
 
 // Generate connection link
 function getShareLink(peerId) {
-    const origin = window.location.origin + window.location.pathname;
-    return `${origin}?room=${peerId}`;
+    // Gracefully handle local file:// URLs and production URLs
+    const baseUrl = window.location.href.split('?')[0];
+    return `${baseUrl}?room=${peerId}`;
 }
 
 // HOST MODE: Create Room
@@ -866,16 +867,32 @@ function initPeer(role, targetRoomId) {
     disconnectMultiplayer();
     onlineRole = role;
 
-    // Use default public PeerJS server
+    // Use default public PeerJS server configured with robust global STUN servers for NAT Traversal
     peer = new Peer(null, {
-        debug: 1
+        debug: 1,
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
+                { urls: 'stun:stun.services.mozilla.com' }
+            ]
+        }
     });
 
     peer.on('open', (id) => {
         if (role === 'host') {
             const link = getShareLink(id);
             shareUrlInput.value = link;
-            hostStatusText.textContent = "Waiting for friend to join...";
+            
+            // Helpful user notice if they run via file:// local context
+            if (window.location.protocol === 'file:') {
+                hostStatusText.innerHTML = `Running locally. Copy link to test in another tab, or use <a href="https://shivteg.github.io/shivtegs-snake/?room=${id}" target="_blank" style="color: var(--neon-blue); font-weight: bold; text-decoration: underline;">GitHub Pages URL</a> to play across different devices!`;
+            } else {
+                hostStatusText.textContent = "Waiting for friend to join...";
+            }
             hostStatusIndicator.className = "status-indicator waiting";
         } else {
             // Client: connect to host
