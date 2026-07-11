@@ -12,6 +12,8 @@ const PEER_CONFIG = {
     host: '0.peerjs.com',
     port: 443,
     secure: true,
+    key: 'peerjs',
+    path: '/',
     pingInterval: 5000,
     debug: 1,
     config: {
@@ -834,7 +836,11 @@ btnOverlayAction.addEventListener('click', () => {
 
 // Generate connection link
 function getShareLink(peerId) {
-    // Gracefully handle local file:// URLs and production URLs
+    // If running via file:// local context, return the live production URL
+    // so that copy-pasting it to other devices/phones will connect successfully!
+    if (window.location.protocol === 'file:') {
+        return `https://shivteg.github.io/shivtegs-snake/?room=${peerId}`;
+    }
     const baseUrl = window.location.href.split('?')[0];
     return `${baseUrl}?room=${peerId}`;
 }
