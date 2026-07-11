@@ -7,6 +7,25 @@ const GRID_SIZE = 30; // 30x30 grid
 const CELL_COUNT = GRID_SIZE;
 const GAME_TICK_RATE = 110; // ms per frame
 
+// --- WebRTC PeerJS Common Config ---
+const PEER_CONFIG = {
+    host: '0.peerjs.com',
+    port: 443,
+    secure: true,
+    pingInterval: 5000,
+    debug: 1,
+    config: {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
+            { urls: 'stun:stun.services.mozilla.com' }
+        ]
+    }
+};
+
 // --- Audio Synthesizer (Web Audio API) ---
 let audioCtx = null;
 let soundEnabled = true;
@@ -855,10 +874,18 @@ btnJoinGame.addEventListener('click', () => {
         return;
     }
 
-    // Extract room ID if it is a full URL
+    // Robust URL parsing to extract the 'room' parameter
     let roomId = inputVal;
-    if (inputVal.includes('?room=')) {
-        roomId = inputVal.split('?room=')[1];
+    try {
+        if (inputVal.startsWith('http://') || inputVal.startsWith('https://') || inputVal.startsWith('file://')) {
+            const url = new URL(inputVal);
+            roomId = url.searchParams.get('room') || roomId;
+        } else if (inputVal.includes('?room=')) {
+            const params = new URLSearchParams(inputVal.substring(inputVal.indexOf('?')));
+            roomId = params.get('room') || roomId;
+        }
+    } catch (e) {
+        console.error("Failed to parse URL, using raw input value", e);
     }
 
     joinStatusContainer.classList.remove('hidden');
@@ -873,20 +900,8 @@ function initPeer(role, targetRoomId) {
     disconnectMultiplayer();
     onlineRole = role;
 
-    // Use default public PeerJS server configured with robust global STUN servers for NAT Traversal
-    peer = new Peer(null, {
-        debug: 1,
-        config: {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' },
-                { urls: 'stun:stun4.l.google.com:19302' },
-                { urls: 'stun:stun.services.mozilla.com' }
-            ]
-        }
-    });
+    // Use default public PeerJS server configured with PEER_CONFIG
+    peer = new Peer(null, PEER_CONFIG);
 
     peer.on('open', (id) => {
         if (role === 'host') {
@@ -929,13 +944,21 @@ function initPeer(role, targetRoomId) {
 }
 
 function connectToHost(hostId) {
+    // Determine which status elements to update (Quick Match or manual invite join)
+    const isQuickMatch = !quickMatchStatusContainer.classList.contains('hidden');
+    const statusText = isQuickMatch ? quickMatchStatusText : joinStatusText;
+    const statusIndicator = isQuickMatch ? quickMatchStatusIndicator : joinStatusIndicator;
+
+    statusText.textContent = "Connecting to peer...";
+    statusIndicator.className = "status-indicator waiting";
+
     connection = peer.connect(hostId, {
         reliable: true
     });
 
     connection.on('open', () => {
-        joinStatusText.textContent = "Connection established! Syncing...";
-        joinStatusIndicator.className = "status-indicator connected";
+        statusText.textContent = "Connection established! Syncing...";
+        statusIndicator.className = "status-indicator connected";
         
         // Host will trigger the layout switch and initialize setup
         // Client waits for the first state update to render
@@ -1103,14 +1126,6 @@ function disconnectMultiplayer() {
 // --- Matchmaking / Quick Match Engine ---
 let searchIndex = 0;
 const MAX_SEARCH_SLOTS = 5;
-const ICE_SERVERS_LIST = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.services.mozilla.com' }
-];
 
 btnQuickMatch.addEventListener('click', () => {
     playSound('click');
@@ -1146,8 +1161,8 @@ function checkNextSlot() {
     
     // We create a temporary peer to probe the slot
     let probePeer = new Peer(null, {
-        debug: 0,
-        config: { iceServers: ICE_SERVERS_LIST }
+        ...PEER_CONFIG,
+        debug: 0
     });
     
     let isResolved = false;
@@ -1203,10 +1218,7 @@ function joinPublicMatch(slotId) {
     disconnectMultiplayer();
     onlineRole = 'client';
     
-    peer = new Peer(null, {
-        debug: 1,
-        config: { iceServers: ICE_SERVERS_LIST }
-    });
+    peer = new Peer(null, PEER_CONFIG);
     
     peer.on('open', () => {
         connectToHost(slotId);
@@ -1235,10 +1247,7 @@ function hostPublicMatch() {
         const slotId = `shivtegs-snake-lobby-slot-${hostSlotIndex}`;
         quickMatchStatusText.textContent = `Creating public match on Slot ${hostSlotIndex + 1}...`;
         
-        peer = new Peer(slotId, {
-            debug: 1,
-            config: { iceServers: ICE_SERVERS_LIST }
-        });
+        peer = new Peer(slotId, PEER_CONFIG);
         
         peer.on('open', () => {
             quickMatchStatusText.textContent = `Lobby active on Slot ${hostSlotIndex + 1}! Waiting for players...`;
